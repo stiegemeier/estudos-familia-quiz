@@ -600,7 +600,9 @@ a.tent{text-decoration:none}
   function minhas(){
     pararConfete();
     cabecalho("Minhas tentativas 📝", "Guardadas neste aparelho");
-    const lista = ls.get(LS_TENT, []);
+    // só as tentativas do aluno atual (pelo ?aluno= ou pelo prefixo do slug); o aparelho pode ser compartilhado
+    const quem = ((ALUNO && !ehUuid(ALUNO) ? ALUNO : "") || (SLUG || "").split("-")[0] || "").toLowerCase();
+    const lista = ls.get(LS_TENT, []).filter(t => !quem || String(t.slug || "").toLowerCase().split("-")[0] === quem);
     const dt = s => { try { return new Date(s).toLocaleString("pt-BR", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"}); } catch(e){ return ""; } };
     const fmt = v => v == null ? "" : Number(v).toLocaleString("pt-BR", {maximumFractionDigits: 1});
     $("#tela").innerHTML = lista.length ? `<div class="lista">${lista.map(t => {
