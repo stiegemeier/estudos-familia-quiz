@@ -10,8 +10,8 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%8C%8E%3C/text%3E%3C/svg%3E">
 <script>
 (function(){
-  var s=(new URLSearchParams(location.search).get("quiz")||"");
-  var t=/^helena(?:-|$)/i.test(s)?"helena":"samuel";
+  var p=new URLSearchParams(location.search), a=(p.get("aluno")||"").trim().toLowerCase(), s=(p.get("quiz")||"");
+  var t=a==="helena"?"helena":a==="samuel"?"samuel":(/^helena(?:-|$)/i.test(s)?"helena":"samuel");
   document.documentElement.classList.add("tema-"+t);
 })();
 </script>
@@ -107,6 +107,16 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
 .spin{display:inline-block;width:22px;height:22px;border:4px solid var(--op-borda);border-top-color:var(--rosa);border-radius:50%;animation:gira 0.8s linear infinite;vertical-align:middle}
 @keyframes gira{to{transform:rotate(360deg)}}
 .fb{margin-top:8px;background:#fff;border-radius:14px;padding:8px 12px;font-size:16px;border-left:5px solid var(--rosa)}
+/* ---- fase 3: lista de quizzes e correção das discursivas ---- */
+.grupo{margin-top:6px}.grupo + .grupo{margin-top:18px}
+.gtit{margin:4px 0 2px;color:var(--rosa-esc);font-size:22px}
+a.tent{text-decoration:none}
+.tent.quiz b,.tent.aluno b{font-size:17px}
+.badge.novo{background:var(--rosa-cla);color:var(--rosa-esc)}
+.fb.ok{border-left-color:var(--menta)}
+.fb.dica2{border-left-color:#ffc83d}
+.fb.esc{border-left-color:var(--op-borda);font-size:15px}
+.fb.esc s{color:#b34a5a}
 
 </style>
 </head>
@@ -124,14 +134,17 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
   // ===== Config (só a chave PUBLISHABLE pode ficar aqui) =====
   const SB_URL = "https://kugqwtxcmtvcfrpqqcxc.supabase.co";
   const SB_KEY = "sb_publishable__dpi09Q-PWiWwhwoMDXl-w_6JjApol2";
-  const QUIZ_PADRAO = "samuel-geografia-23-11-quiz1";
+  // fase 3: sem ?quiz= a página abre a lista de quizzes do aluno (ou a escolha do aluno)
 
   const $ = s => document.querySelector(s);
   const esc = s => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   const LETRAS = "ABCDEFGH";
   const params = new URLSearchParams(location.search);
-  const SLUG = params.get("quiz") || QUIZ_PADRAO;
-  const ALUNO = params.get("aluno") || null;
+  let SLUG = params.get("quiz") || null;
+  let ALUNO = params.get("aluno") || null;            // id (uuid) ou primeiro nome, ex.: ?aluno=samuel
+  const LS_ALUNO = "eqf_aluno";                        // último aluno escolhido neste aparelho
+  const ehUuid = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v || "");
+  let alunoId = ehUuid(ALUNO) ? ALUNO : null;         // resolvido pela lista quando vier o nome
   const LS_TENT = "eqf_tentativas", LS_FILA = "eqf_fila", lsProg = t => "eqf_prog_" + t;
 
   const TEMAS = {
@@ -179,6 +192,9 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
     const nome = nomeDoAluno(quiz).trim().toLowerCase();
     if (nome === "helena" || nome.startsWith("helena ")) return "helena";
     if (nome === "samuel" || nome.startsWith("samuel ")) return "samuel";
+    const pAluno = String(ALUNO || "").trim().toLowerCase();
+    if (pAluno === "helena") return "helena";
+    if (pAluno === "samuel") return "samuel";
     const slug = String((quiz && quiz.slug) || SLUG || "").toLowerCase();
     if (slug.startsWith("helena-") || slug === "helena") return "helena";
     return "samuel";
@@ -324,6 +340,8 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
       <p style="font-size:19px">São <b>${n} perguntas</b>${nd ? ` (${nd} para escrever ✍️)` : ""}.<br>Leia com calma, escolha uma resposta e aperte <b>Próxima</b>.<br>No final aparece a sua nota! ⭐</p>
       ${pend ? `<div class="acoes" style="justify-content:center"><button class="btn" id="cont">Continuar de onde parei ▶️</button><button class="btn sec" id="go">Começar de novo</button></div>`
              : `<button class="btn" id="go">Vamos começar! 🚀</button>`}</div>`;
+    const alunoLista = ALUNO || (QUIZ.aluno && QUIZ.aluno.nome);
+    if (alunoLista) $("#tela").insertAdjacentHTML("beforeend", `<p class="centro" style="margin-top:14px"><a class="lnk" href="${urlLista(alunoLista)}" id="voltaLista">⬅ Ver todos os quizzes</a></p>`);
     if (pend) $("#cont").onclick = () => retomar(pend.token);
     $("#go").onclick = comecar;
   }
@@ -331,7 +349,10 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
   async function comecar(){
     const b = $("#go"); b.disabled = true; b.innerHTML = `<span class="spin"></span>`;
     let r;
-    try { r = await rpcRetry("iniciar_tentativa", ALUNO ? {p_quiz: SLUG, p_aluno: ALUNO} : {p_quiz: SLUG}, 4); }
+    try {
+      if (ALUNO && !alunoId){ const l = await rpcRetry("listar_quizzes", {p_aluno: ALUNO}, 3); alunoId = l.aluno.id; }
+      r = await rpcRetry("iniciar_tentativa", alunoId ? {p_quiz: SLUG, p_aluno: alunoId} : {p_quiz: SLUG}, 4);
+    }
     catch(e){ b.disabled = false; b.textContent = "Tentar de novo 🔁"; status(e instanceof ErroRede ? "Sem internet. Tente de novo quando conectar 📶" : e.message); return; }
     statusOff();
     token = r.token; if (r.quiz){ QUIZ = r.quiz; aplicarTema(QUIZ); }
@@ -360,10 +381,10 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
   function pararMic(){ if (reconhecedor){ try { reconhecedor.stop(); } catch(e){} reconhecedor = null; } }
 
   function questao(){
-    pararMic();
+    pararMic(); if ($("#status").textContent.includes("🎤") || $("#status").textContent.includes("✍️")) statusOff();
     const q = QUIZ.questoes[atual], n = QUIZ.questoes.length, ult = atual === n-1;
     const feitas = resp.filter(r => r != null && r !== "").length;
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SR = (window.isSecureContext !== false) && (window.SpeechRecognition || window.webkitSpeechRecognition);
     let corpo;
     if (q.tipo === "objetiva"){
       corpo = `<div class="ops">${ordem[atual].map((oi,k) => `<button class="op${resp[atual]===oi?" sel":""}" data-o="${oi}" style="--c:${temaAtual().coresOp[k%4]}"><span class="l">${LETRAS[k]}</span><span>${esc(q.alternativas[oi])}</span></button>`).join("")}</div>`;
@@ -401,7 +422,13 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
         const r = new SR(); r.lang = "pt-BR"; r.interimResults = true; r.continuous = true;
         const base = ta.value ? ta.value.replace(/\s*$/, " ") : "";
         r.onresult = ev => { let t = ""; for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript; ta.value = base + t; ta.oninput(); };
-        r.onerror = ev => { status(ev.error === "not-allowed" ? "Libere o microfone para falar 🎤" : "Não entendi, tente de novo 🎤"); };
+        r.onerror = ev => {
+          const m = {"not-allowed":"Libere o microfone para falar 🎤 (ou digite a resposta)", "service-not-allowed":"O microfone não está disponível aqui. Digite a resposta ✍️",
+                     "audio-capture":"Não achei o microfone. Digite a resposta ✍️", "network":"O ditado precisa de internet. Digite a resposta ✍️",
+                     "no-speech":"Não ouvi nada. Aperte de novo e fale perto do aparelho 🎤"}[ev.error] || "Não entendi, tente de novo 🎤";
+          status(m); clearTimeout(stTimer); stTimer = setTimeout(statusOff, 4500);
+          if (["not-allowed","service-not-allowed","audio-capture"].includes(ev.error)){ const b = $("#mic"); if (b) b.remove(); }
+        };
         r.onend = () => { const m = $("#mic"); if (m){ m.classList.remove("on"); m.textContent = "🎤 Falar a resposta"; } reconhecedor = null; };
         try { r.start(); reconhecedor = r; $("#mic").classList.add("on"); $("#mic").textContent = "⏹️ Parar"; } catch(e){ status("Microfone indisponível 🎤"); }
       };
@@ -446,6 +473,13 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
     return it.resposta_texto ? esc(it.resposta_texto) : "(sem resposta)";
   }
 
+  function blocoDiscursiva(it){
+    const errs = Array.isArray(it.erros_escrita) ? it.erros_escrita : [];
+    return `${it.feedback && it.feedback !== "Sem resposta." ? `<div class="fb ok">✅ <b>O que você acertou:</b> ${esc(it.feedback)}</div>` : ""}
+      ${it.feedback_dica ? `<div class="fb dica2">🔎 <b>Dica:</b> ${esc(it.feedback_dica)}${it.pagina && !String(it.feedback_dica).includes("p.") ? ` <small>(${esc(it.pagina)})</small>` : ""}</div>` : ""}
+      ${errs.length ? `<div class="fb esc">✏️ <b>Cuidado com a escrita</b> <small>(não tirou ponto)</small>: ${errs.map(e => `<s>${esc(e.escrito)}</s> → <b>${esc(e.correto)}</b>`).join(", ")}</div>` : ""}`;
+  }
+
   function resultado(r, festa){
     const fmt = v => Number(v).toLocaleString("pt-BR", {maximumFractionDigits: 1});
     const aguard = r.status === "aguardando_correcao";
@@ -455,9 +489,9 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
     $("#tela").innerHTML = `<div class="centro pop">
       ${aguard ? `<div class="grandes">⏳✍️</div>
         <div class="aviso">Correção chegando em alguns minutos! ✍️<br><span style="font-weight:400">As perguntas de escrever vão ser corrigidas e a nota final aparece em <b>Minha correção</b>.</span></div>
-        <div style="font-size:18px">Nota parcial (só as de marcar): <b>${nota == null ? "—" : fmt(nota)}</b></div>`
+        ${nota == null ? "" : `<div style="font-size:18px">Nota parcial (só as de marcar): <b>${fmt(nota)}</b></div>`}`
       : `<div class="grandes">${grandes}</div>
-        <div style="font-size:20px">Você acertou <b>${fmt(r.acertos)} de ${r.total}</b></div>
+        <div style="font-size:20px">${(r.itens || []).some(i => i.tipo === "discursiva") ? `Você fez <b>${fmt(r.acertos)} de ${r.total}</b> pontos` : `Você acertou <b>${fmt(r.acertos)} de ${r.total}</b>`}</div>
         <div class="nota">${fmt(nota)}<small> / 10</small></div>
         <div class="selo">${selo}</div><p style="font-size:18px">${msg}</p>`}
       <div class="acoes" style="justify-content:center">
@@ -474,8 +508,8 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
           <div class="r">${temaAtual().coracao} <b>Sua resposta:</b> ${textoResposta(it)}</div>
           ${pend ? `<div class="r">⏳ Esperando correção…</div>` : ""}
           ${!pend && Number(it.pontuacao) < 1 && it.resposta_certa ? `<div class="r">🌟 <b>Resposta certa:</b> ${esc(it.resposta_certa)}</div>` : ""}
-          ${it.feedback && it.feedback !== "Sem resposta." ? `<div class="fb">💬 ${esc(it.feedback)}</div>` : ""}
-          ${it.explicacao ? `<div class="exp">💡 ${esc(it.explicacao)}</div>` : ""}</div>`; }).join("")}</div>`;
+          ${it.tipo === "discursiva" && !pend ? blocoDiscursiva(it) : (it.feedback && it.feedback !== "Sem resposta." ? `<div class="fb">💬 ${esc(it.feedback)}</div>` : "")}
+          ${it.explicacao && !(it.tipo === "discursiva" && Number(it.pontuacao) >= 1) ? `<div class="exp">💡 ${esc(it.explicacao)}</div>` : ""}</div>`; }).join("")}</div>`;
     if (festa){ $("#denovo").onclick = () => { history.replaceState(null, "", location.pathname + "?quiz=" + encodeURIComponent(SLUG) + (ALUNO ? "&aluno=" + encodeURIComponent(ALUNO) : "")); inicio(); window.scrollTo({top:0}); }; }
     else $("#atualiza").onclick = () => abrirCorrecao(token);
     document.body.dataset.nota = nota == null ? "" : nota;
@@ -509,7 +543,58 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
       return;
     }
     atualizarTentativa(t, {status: r.status, nota: r.nota, nota_parcial: r.nota_parcial});
+    if (r.slug && !SLUG) SLUG = r.slug;
     resultado(r, false);
+    clearTimeout(autoTimer);
+    if (r.status === "aguardando_correcao") autoTimer = setTimeout(() => { if (new URLSearchParams(location.search).get("t") === t) abrirCorrecao(t); }, 60000);
+  }
+  let autoTimer;
+
+  // ===== lista de quizzes (fase 3) =====
+  const urlLista = a => `${location.pathname}?aluno=${encodeURIComponent(String(a).toLowerCase())}`;
+  const dataBR = d => d ? d.split("-").reverse().slice(0, 2).join("/") : "";
+  async function escolherAluno(){
+    pararConfete(); cabecalho("Quizzes 🌎", "Quem vai estudar hoje?");
+    $("#tela").innerHTML = `<div class="centro"><span class="spin"></span> Carregando…</div>`;
+    let l;
+    try { l = await rpcRetry("listar_alunos", {}, 3); }
+    catch(e){ return erroLista(escolherAluno, e); }
+    statusOff();
+    $("#tela").innerHTML = `<div class="centro pop"><div class="qemoji">👋</div><h2>Quem é você?</h2></div>
+      <div class="lista">${l.map(a => `<a class="tent aluno" href="${urlLista(a.nome)}"><span><b>${esc(a.nome)}</b><small>${esc(a.serie)}</small></span><span class="badge">Entrar ➜</span></a>`).join("")}</div>`;
+    document.body.dataset.tela = "alunos";
+  }
+  async function escolherQuiz(){
+    pararConfete(); cabecalho("Meus quizzes 🌎", "");
+    $("#tela").innerHTML = `<div class="centro"><span class="spin"></span> Carregando seus quizzes…</div>`;
+    let l;
+    try { l = await rpcRetry("listar_quizzes", {p_aluno: ALUNO}, 3); }
+    catch(e){ return erroLista(escolherQuiz, e); }
+    statusOff(); alunoId = l.aluno.id; ls.set(LS_ALUNO, ALUNO); aplicarTema({aluno: l.aluno});
+    cabecalho(`Quizzes ${l.aluno.nome === "Helena" ? "da" : "do"} ${l.aluno.nome} ${temaAtual().favicon}`, `${l.aluno.serie} · escolha um quiz`);
+    document.title = `Quizzes · ${l.aluno.nome}`;
+    const fmt = v => Number(v).toLocaleString("pt-BR", {maximumFractionDigits: 1});
+    // agrupa por matéria; matéria com prova mais próxima/recente primeiro; dentro dela, prova mais recente primeiro
+    const grupos = {};
+    l.quizzes.forEach(q => (grupos[q.materia] = grupos[q.materia] || []).push(q));
+    const chave = g => g.reduce((m, q) => (q.data_prova || "") > m ? q.data_prova : m, "");
+    const ordem = Object.keys(grupos).sort((a, b) => chave(grupos[b]).localeCompare(chave(grupos[a])) || a.localeCompare(b));
+    const selo = q => {
+      if (q.ultima && q.ultima.status === "aguardando_correcao") return `<span class="badge w">Corrigindo ⏳</span>`;
+      if (q.melhor_nota != null) return `<span class="badge c">Melhor nota ${fmt(q.melhor_nota)}</span>`;
+      if (q.ultima && q.ultima.status === "em_andamento") return `<span class="badge">Começado ▶️</span>`;
+      return `<span class="badge novo">Novo ✨</span>`;
+    };
+    $("#tela").innerHTML = l.quizzes.length ? ordem.map(m => `<div class="grupo"><h2 class="gtit">📚 ${esc(m)}</h2><div class="lista">${grupos[m].map(q => `
+        <a class="tent quiz" data-slug="${esc(q.slug)}" href="${location.pathname}?quiz=${encodeURIComponent(q.slug)}&aluno=${encodeURIComponent(ALUNO.toLowerCase())}">
+          <span><b>${esc(q.titulo)}</b><small>${q.data_prova ? `📅 Prova ${dataBR(q.data_prova)} · ` : ""}${q.n_questoes} perguntas${q.n_discursivas ? ` (${q.n_discursivas === q.n_questoes ? "todas" : q.n_discursivas} para escrever ✍️)` : ""}</small></span>${selo(q)}</a>`).join("")}</div></div>`).join("")
+      : `<div class="centro"><div class="qemoji">📭</div><p>Nenhum quiz por aqui ainda.</p></div>`;
+    document.body.dataset.tela = "lista";
+  }
+  function erroLista(fn, e){
+    $("#tela").innerHTML = `<div class="centro"><div class="qemoji">${e instanceof ErroRede ? "📶" : "🤔"}</div><h2>${e instanceof ErroRede ? "Estamos sem internet" : "Não achei"}</h2>
+      <p>${e instanceof ErroRede ? "Tente de novo quando conectar." : esc(e.message)}</p><button class="btn" id="tenta">Tentar de novo 🔁</button></div>`;
+    $("#tenta").onclick = fn;
   }
 
   function minhas(){
@@ -548,11 +633,23 @@ canvas#confete{position:fixed;inset:0;width:100%;height:100%;pointer-events:none
   // ===== rota =====
   function rota(){
     const p = new URLSearchParams(location.search);
+    SLUG = p.get("quiz") || null; ALUNO = p.get("aluno") || null; if (ehUuid(ALUNO)) alunoId = ALUNO;
+    clearTimeout(autoTimer); delete document.body.dataset.tela;
+    aplicarTema(null);                                 // tema pelos parâmetros; cada tela refina depois
     if (p.get("t")) abrirCorrecao(p.get("t"));
     else if (p.has("minhas")) minhas();
-    else inicio();
+    else if (SLUG) inicio();
+    else if (ALUNO) escolherQuiz();
+    else escolherAluno();
   }
-  $("#lnkMinhas").onclick = e => { e.preventDefault(); history.pushState(null, "", location.pathname + "?quiz=" + encodeURIComponent(SLUG) + "&minhas=1"); minhas(); };
+  // link "Meus quizzes" no topo (injetado aqui para não mexer no template)
+  $("#lnkMinhas").insertAdjacentHTML("beforebegin", `<a href="#" id="lnkLista">🏠 Meus quizzes</a> · `);
+  $("#lnkLista").onclick = e => { e.preventDefault(); const a = ALUNO || ls.get(LS_ALUNO, null); history.pushState(null, "", a ? urlLista(a) : location.pathname); rota(); };
+  $("#lnkMinhas").onclick = e => {
+    e.preventDefault();
+    const q = new URLSearchParams(); if (SLUG) q.set("quiz", SLUG); if (ALUNO) q.set("aluno", ALUNO); q.set("minhas", "1");
+    history.pushState(null, "", location.pathname + "?" + q.toString()); minhas();
+  };
   window.addEventListener("popstate", rota);
   esvaziar(); rota();
   document.body.dataset.pronto = "1";
