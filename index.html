@@ -117,6 +117,23 @@ a.tent{text-decoration:none}
 .fb.dica2{border-left-color:#ffc83d}
 .fb.esc{border-left-color:var(--op-borda);font-size:15px}
 .fb.esc s{color:#b34a5a}
+/* ---- fase 4: provas e nível ---- */
+.prova{margin-top:6px}.prova + .prova,.passadas{margin-top:18px}
+.ptopo{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 10px}
+.pdata{font-size:14px;color:var(--texto-suave)}
+.pdata b{color:var(--rosa-esc)}
+.pmat{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px}
+.mchip{font-size:12px;font-weight:700;border-radius:999px;padding:2px 10px;background:var(--rosa-cla);color:var(--rosa-esc)}
+.prova.vazia{opacity:.55}
+.embreve{margin-top:8px;padding:12px 14px;border-radius:16px;border:3px dashed var(--op-borda);color:var(--texto-suave);font-weight:600;text-align:center}
+.passadas summary{cursor:pointer;font-weight:700;color:var(--rosa-esc);padding:10px 4px;font-size:17px}
+.passadas .prova{opacity:.85}
+.nivel{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--rosa-esc);margin:2px 0}
+.nivel .est{letter-spacing:1px;font-size:16px;line-height:1}
+.nivel .est i{font-style:normal;color:var(--op-borda)}
+.nivel .est i.on{color:var(--rosa)}
+.nivel-inicio{display:flex;justify-content:center;margin:2px 0 4px}
+.nivel-inicio .nivel{font-size:16px}.nivel-inicio .est{font-size:24px}
 
 </style>
 </head>
@@ -337,6 +354,8 @@ a.tent{text-decoration:none}
     $("#tela").innerHTML = `<div class="centro pop">
       <div class="qemoji">${temaAtual().emojiInicio}</div>
       <h2 style="font-size:28px;margin:8px 0;color:var(--rosa-esc)">${esc(temaAtual().saudacao(nomeAluno))}</h2>
+      ${QUIZ.nivel ? `<div class="nivel-inicio">${estrelasNivel(QUIZ.nivel)}</div>` : ""}
+      ${QUIZ.prova ? `<p class="pdata" style="margin:4px 0 10px">📝 Para a prova de <b>${esc(QUIZ.prova.titulo)}</b> · ${dataLonga(QUIZ.prova.data)}</p>` : ""}
       <p style="font-size:19px">São <b>${n} perguntas</b>${nd ? ` (${nd} para escrever ✍️)` : ""}.<br>Leia com calma, escolha uma resposta e aperte <b>Próxima</b>.<br>No final aparece a sua nota! ⭐</p>
       ${pend ? `<div class="acoes" style="justify-content:center"><button class="btn" id="cont">Continuar de onde parei ▶️</button><button class="btn sec" id="go">Começar de novo</button></div>`
              : `<button class="btn" id="go">Vamos começar! 🚀</button>`}</div>`;
@@ -553,6 +572,12 @@ a.tent{text-decoration:none}
   // ===== lista de quizzes (fase 3) =====
   const urlLista = a => `${location.pathname}?aluno=${encodeURIComponent(String(a).toLowerCase())}`;
   const dataBR = d => d ? d.split("-").reverse().slice(0, 2).join("/") : "";
+  const dataLonga = d => { try { return new Date(d + "T12:00:00").toLocaleDateString("pt-BR", {weekday: "short", day: "2-digit", month: "2-digit"}).replace(".", ""); } catch(e){ return dataBR(d); } };
+  const quando = n => n === 0 ? "é hoje! 💪" : n === 1 ? "amanhã" : `em ${n} dias`;
+  function estrelasNivel(n){
+    if (!Number(n)) return ""; n = Math.max(1, Math.min(5, Math.round(Number(n))));
+    return `<span class="nivel" title="Nível ${n} de 5" aria-label="Nível ${n} de 5"><span class="est">${[1,2,3,4,5].map(k => `<i class="${k <= n ? "on" : ""}">★</i>`).join("")}</span> Nível ${n}</span>`;
+  }
   async function escolherAluno(){
     pararConfete(); cabecalho("Quizzes 🌎", "Quem vai estudar hoje?");
     $("#tela").innerHTML = `<div class="centro"><span class="spin"></span> Carregando…</div>`;
@@ -574,21 +599,30 @@ a.tent{text-decoration:none}
     cabecalho(`Quizzes ${l.aluno.nome === "Helena" ? "da" : "do"} ${l.aluno.nome} ${temaAtual().favicon}`, `${l.aluno.serie} · escolha um quiz`);
     document.title = `Quizzes · ${l.aluno.nome}`;
     const fmt = v => Number(v).toLocaleString("pt-BR", {maximumFractionDigits: 1});
-    // agrupa por matéria; matéria com prova mais próxima/recente primeiro; dentro dela, prova mais recente primeiro
-    const grupos = {};
-    l.quizzes.forEach(q => (grupos[q.materia] = grupos[q.materia] || []).push(q));
-    const chave = g => g.reduce((m, q) => (q.data_prova || "") > m ? q.data_prova : m, "");
-    const ordem = Object.keys(grupos).sort((a, b) => chave(grupos[b]).localeCompare(chave(grupos[a])) || a.localeCompare(b));
     const selo = q => {
       if (q.ultima && q.ultima.status === "aguardando_correcao") return `<span class="badge w">Corrigindo ⏳</span>`;
       if (q.melhor_nota != null) return `<span class="badge c">Melhor nota ${fmt(q.melhor_nota)}</span>`;
       if (q.ultima && q.ultima.status === "em_andamento") return `<span class="badge">Começado ▶️</span>`;
       return `<span class="badge novo">Novo ✨</span>`;
     };
-    $("#tela").innerHTML = l.quizzes.length ? ordem.map(m => `<div class="grupo"><h2 class="gtit">📚 ${esc(m)}</h2><div class="lista">${grupos[m].map(q => `
-        <a class="tent quiz" data-slug="${esc(q.slug)}" href="${location.pathname}?quiz=${encodeURIComponent(q.slug)}&aluno=${encodeURIComponent(ALUNO.toLowerCase())}">
-          <span><b>${esc(q.titulo)}</b><small>${q.data_prova ? `📅 Prova ${dataBR(q.data_prova)} · ` : ""}${q.n_questoes} perguntas${q.n_discursivas ? ` (${q.n_discursivas === q.n_questoes ? "todas" : q.n_discursivas} para escrever ✍️)` : ""}</small></span>${selo(q)}</a>`).join("")}</div></div>`).join("")
-      : `<div class="centro"><div class="qemoji">📭</div><p>Nenhum quiz por aqui ainda.</p></div>`;
+    const aluno = encodeURIComponent(String(ALUNO).toLowerCase());
+    const card = q => `
+        <a class="tent quiz" data-slug="${esc(q.slug)}" data-nivel="${q.nivel || ""}" href="${location.pathname}?quiz=${encodeURIComponent(q.slug)}&aluno=${aluno}">
+          <span><b>${esc(q.titulo)}</b>${estrelasNivel(q.nivel)}<small>${q.n_questoes} perguntas${q.n_discursivas ? ` (${q.n_discursivas === q.n_questoes ? "todas" : q.n_discursivas} para escrever ✍️)` : ""}</small></span>${selo(q)}</a>`;
+    const secao = (p, extra) => `<section class="prova${extra || ""}" data-prova="${esc(p.titulo)}" data-data="${esc(p.data)}">
+        <div class="ptopo"><h2 class="gtit">📝 ${esc(p.titulo)}</h2><span class="pdata">📅 ${dataLonga(p.data)}${p.passada ? "" : ` · <b>${quando(p.dias)}</b>`}</span></div>
+        ${(p.materias || []).length && !(p.materias.length === 1 && p.materias[0] === p.titulo) ? `<div class="pmat">${p.materias.map(m => `<span class="mchip">${esc(m)}</span>`).join("")}</div>` : ""}
+        ${p.quizzes.length ? `<div class="lista">${p.quizzes.map(card).join("")}</div>` : `<div class="embreve">⏳ Quiz em breve</div>`}</section>`;
+    const provas = l.provas || [];
+    const proximas = provas.filter(p => !p.passada);
+    let vazias = 0;
+    const mostrar = proximas.filter(p => p.quizzes.length || ++vazias <= 2);   // provas sem quiz: só as 2 próximas
+    const passadas = provas.filter(p => p.passada && p.quizzes.length);
+    const semProva = l.sem_prova || [];
+    let html = mostrar.map(p => secao(p, p.quizzes.length ? "" : " vazia")).join("");
+    if (semProva.length) html += `<section class="prova"><div class="ptopo"><h2 class="gtit">📚 Outros quizzes</h2></div><div class="lista">${semProva.map(card).join("")}</div></section>`;
+    if (passadas.length) html += `<details class="passadas"><summary>🗂️ Provas que já passaram (${passadas.length})</summary>${passadas.map(p => secao(p, " velha")).join("")}</details>`;
+    $("#tela").innerHTML = html || `<div class="centro"><div class="qemoji">📭</div><p>Nenhum quiz por aqui ainda.</p></div>`;
     document.body.dataset.tela = "lista";
   }
   function erroLista(fn, e){
